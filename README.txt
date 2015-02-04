@@ -7,7 +7,6 @@ Indesign extension to convert print magazine InDesign files to mobile friendly i
   - Support numours featues
 
 
-
 ### Version
 1.0.0
 
