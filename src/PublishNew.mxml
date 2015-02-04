@@ -1,0 +1,849 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application 
+	xmlns:mx="http://www.adobe.com/2006/mxml" 
+	layout="absolute" historyManagementEnabled="false"  
+	applicationComplete="colorSync()" 
+	creationComplete="applicationComplete(event)"
+	minHeight="500" minWidth="400" width="100%" height="100%" xmlns:preloader="com.picsean.publish.view.preloader.*" xmlns:view="com.picsean.publish.view.*" xmlns:issues="com.picsean.publish.view.issues.*">
+	<mx:Style source="assets/styles/publish_main.css" />
+	<mx:Script>
+		<![CDATA[
+			import com.adobe.csawlib.indesign.InDesign;
+			import com.adobe.csxs.core.CSXSInterface;
+			import com.adobe.indesign.Group;
+			import com.adobe.indesign.UserInteractionLevels;
+			import com.adobe.serialization.json.JSON;
+			import com.adobe.utils.DateUtil;
+			import com.picsean.publish.automation.ArticleInfoHelper;
+			import com.picsean.publish.automation.DirectorySearch;
+			import com.picsean.publish.automation.ImageScale;
+			import com.picsean.publish.automation.JsonParsing;
+			import com.picsean.publish.automation.ThumbnailHelper;
+			import com.picsean.publish.core.DirectoryAction;
+			import com.picsean.publish.core.FileAction;
+			import com.picsean.publish.core.InitializationManager;
+			import com.picsean.publish.core.PageAction;
+			import com.picsean.publish.core.PublishAction;
+			import com.picsean.publish.core.PublishQueue;
+			import com.picsean.publish.core.RESTServiceController;
+			import com.picsean.publish.core.S3Manager;
+			import com.picsean.publish.events.EventFilePublish;
+			import com.picsean.publish.events.EventIssues;
+			import com.picsean.publish.events.EventRestService;
+			import com.picsean.publish.events.EventS3Bucket;
+			import com.picsean.publish.events.EventTransporter;
+			import com.picsean.publish.feature.IFeature;
+			import com.picsean.publish.feature.MainFeature;
+			import com.picsean.publish.logging.EventfulLogger;
+			import com.picsean.publish.logging.EventfulLoggerFactory;
+			import com.picsean.publish.logging.LoggerEvent;
+			import com.picsean.publish.model.LayoutVO;
+			import com.picsean.publish.model.PublishModel;
+			import com.picsean.publish.model.vo.DirectoryVO;
+			import com.picsean.publish.model.vo.FileVO;
+			import com.picsean.publish.model.vo.IssueRawVO;
+			import com.picsean.publish.model.vo.PageVO;
+			import com.picsean.publish.model.vo.PublishVO;
+			import com.picsean.publish.utils.Configuration;
+			import com.picsean.publish.utils.Constants;
+			import com.picsean.publish.utils.CookieHelper;
+			import com.picsean.publish.utils.DirectoryDriller;
+			import com.picsean.publish.view.preloader.LoadAnim;
+			
+			import flash.filesystem.File;
+			import flash.filesystem.FileMode;
+			import flash.filesystem.FileStream;
+			
+			import mx.collections.ArrayCollection;
+			import mx.collections.IViewCursor;
+			import mx.collections.Sort;
+			import mx.collections.SortField;
+			import mx.controls.Alert;
+			import mx.events.FlexEvent;
+			import mx.events.ItemClickEvent;
+			import mx.events.ListEvent;
+			
+			import org.as3commons.collections.framework.IIterator;
+			import org.as3commons.collections.fx.LinkedMapFx;
+			import org.as3commons.collections.utils.NumericComparator;
+			import org.as3commons.reflect.Field;
+			import org.osmf.logging.Log;
+			import org.osmf.logging.Logger;
+			// ipad -> 2 // retina -> 1
+			private var deviceArray:ArrayCollection=new ArrayCollection(Configuration.DEVICE_INFO);
+			
+			
+			[Bindable]
+			private var hostName:String = HostObject.mainExtension;
+			
+			[Embed (source= "Resources/Browse.jsx" , mimeType= "application/octet-stream" )] 
+			private static var myScriptClass:Class;
+			
+			[Embed (source= "Resources/Batch_conversion.jsx" , mimeType= "application/octet-stream" )] 
+			private var convertScript:Class;
+			
+			private var initializeManager:InitializationManager;
+			private var publishQueue : PublishQueue
+			private var isInitialised:Boolean = false;
+			private var logger:Logger;
+			
+			private var folderSelected : String = "";
+			private var pathSelected : String = "";
+			private var _device:Array = new Array();
+			private var processCount:int =0;
+			
+			private var devicePrintTimer:Timer = new Timer(2000,0);
+			private var fileLogTimer:Timer = new Timer(100,0);
+			private var thumbnailTimer : Timer = new Timer(1000);
+			
+			private var _devicelist :LinkedMapFx = new LinkedMapFx();
+			private var _deployDevices : Array = new Array();
+			private var _isconverted:Boolean = false;
+			private var _model : PublishModel = PublishModel.getInstance();
+			
+			private var s3Manager : S3Manager;
+			private var thumbHelper : ThumbnailHelper = new ThumbnailHelper();
+			private var artilceinfoHelper : ArticleInfoHelper = new ArticleInfoHelper();
+			
+			private var ivo:IssueRawVO;
+			
+			[Bindable]private var serviceController : RESTServiceController;
+			[Bindable]private var tabNames : Array = new Array( {label:"Issues Panel",data:'issues'},{label:"Publish Panel", data:"ppanel"});
+			[Bindable]private var logMessage:String = "";
+			
+			public function colorSync():void{
+				AutoTheme.sync();
+			}
+			
+			/***********************************CREATION COMPLETE HANDLER *****************************************************
+			 * 1. InitilazeManager -> adding an action -> DirectoryAction -> Lists out all directories and keepds in model
+			 * 2. Publish Queue -> InitialiseManager -> add action -> PublishAction -> PageVO
+			 * 	  Adding into printQueue(FileVO) -> from filevo getting the pagevo puts to PublishAction and runs the publish
+			 *    this acton will publish images and makes the Json.
+			 * 3. S3Manager to push the published files to S3 and add entry to Db
+			 * 4. initialisePublish -> deviceInfo array, intialise db
+			 * 5. JSON merge event handler -> merging multiple json to one
+			 * **/
+			protected function applicationComplete(event:FlexEvent):void
+			{
+				preloader.visible= false;
+				setupLogger();
+				initializeManager = new InitializationManager();
+				publishQueue = new PublishQueue();
+			
+				s3Initialiser();
+				
+				PublishModel.getInstance().app = InDesign.app;
+				_model.initialisePublish();
+				InDesign.app.scriptPreferences.userInteractionLevel = UserInteractionLevels.NEVER_INTERACT;
+				isPublish();
+				
+				EventTransporter.getInstance().addEventListener(EventFilePublish.EVENT_JSON_MERGE_COMPLETE, jsonMergeCompleted);
+				EventTransporter.getInstance().addEventListener(EventFilePublish.EVENT_SCALE_COMPLETED, onScaleCompleted);
+				EventTransporter.getInstance().addEventListener(EventS3Bucket.EVENT_JSON_UPLOAD_COMPLETED, onJSONUploadComplete);
+				
+				_isconverted = true ;
+				isPublish();
+				
+				_model.initialiseDBQuieries();
+				
+			}
+			
+			private function s3Initialiser():void	{
+				
+				s3Manager = new S3Manager();
+				if(CookieHelper.getInstance().initialize())	{
+					var userInfo:Object = CookieHelper.getInstance().getUserInfo();
+					if(userInfo != "" && userInfo.id_user)	{
+						tabContentHolder.visible = true;loginView.visible = false;
+					}
+				}
+				initialiseREST(); 
+			}
+			
+			/**********************************************PUBLISH PROCESS FLOW *********************************************
+			 *
+			 *	1. Adds an action to initializeManager ie DirectoryAction
+			 *	2. DirectoryAction traverse through all the Directories in the selected device
+			 *	3. On completion of that triggers EVENT_DIRECTORY_DONE event
+			 *	4. After the event triggers it invokes publishQueue.initialiseQueue(initializeManager) giving initialiseManager as dependency
+			 *	5. * Getting directory list from initialiseManager, creating the filevo
+			 *	
+			 *	5.1  	Creating FileVO, ie the IDML file,  -> PublishQueue
+			 *	5.2		(Here we are checking the timestamps of IDML and Jumps out from the process below)
+			 *		
+			 *	5.2.1 		Runs a timer to show the log (100 milliseconds) and goes to step 5
+			 *	
+			 *	5.3		Adding all pages into printQueue by PageVO wrapped into PublishAction
+			 *	5.4		(
+			 *			While creating the PageVO constructor it calls populate method and there all the features/innerfeatures get created
+			 *			At the time of creating of the features the images corresponding to  particular features get published
+			 *			)
+			 *	5.5		All the PublishAction added into the InitialiseManager
+			 *	5.6		IntialiseManagers executePublish invokes the execute method of all PublishAction
+			 *	5.7		PublishAction prints the p01 pages and creates the json
+			 *	5.8		PublishAction checks the PageVO is the last page or not (if its the last page it triggers EVENT_FVO_DONE)
+			 *	5.9		on listener of EVENT_FVO_DONE event, IntialiseManagers triggers EVENT_FVO_COMPLETED event
+			 *	5.10	on listener of EVENT_FVO_COMPLETED publish queue calls restartPublish() 
+			 *	5.10.1 		Runs a timer to show the log (100 milliseconds) and goes to step 5
+			 *	
+			 *	6. This will continue untill the last folder in the a particular device directory [includes p and l] process
+			 *	7. After proceesing all the folders EVENT_QUEUE_COMPLETED is been triggered system checks for relativePresent (Any relative pano spread into pages)
+			 *	
+			 *	7.1   If relativePresent, then Merges the JSON by JsonParsing class and global dispatcher triggers EVENT_JSON_MERGE_COMPLETE
+			 *	
+			 *	7.2.1 	on completion of json merge invokes completeCurrentDevicePublish
+			 *	
+			 *	7.2   If not present invokes completeCurrentDevicePublish
+			 *	8. Iterates through FileVO and creates articleinfo.txt
+			 *	9. Checks for any other devices present
+			 *	10. Runs the devicePrintTimer and after 2000 milliseconds and starts from step 1
+			 *	11. Once all the device publishing is over checks for whether device iPad is selected
+			 *	12. If iPad presents search all images in iPad directory 
+			 *	13. Scales down all images triggers EVENT_SCALE_COMPLETED
+			 *	13. If iPad is not present or on listening of EVENT_SCALE_COMPLETED closes the publish tasks.
+			 *
+			 * **/
+			private function initPub():void{
+				getDeviceDetails(_device[processCount]);
+				logger.info(".............Device.............." +_device[processCount] + "\n" );
+				if(!isInitialised)	{
+					initializeManager.addEventListener(EventFilePublish.EVENT_DIRECTORY_DONE,directoryReadHandler);
+					initializeManager.addEventListener(EventFilePublish.EVENT_FVO_COMPLETED,fileReadingDoneHandler);
+					publishQueue.addEventListener(EventFilePublish.EVENT_FVO_QUEUE_JUMPED,fileReadingJumpHandler);
+					publishQueue.addEventListener(EventFilePublish.EVENT_QUEUE_COMPLETED,queueEventComplted);
+					isInitialised = true;
+					this.logMessage = "";
+				}
+				
+				// Loading articleinfo file
+				checkArtilceInfo();
+				
+				PublishModel.getInstance().setupPublish();
+				initializeManager.setupActions();
+				initializeManager.addActions(new DirectoryAction());
+				initializeManager.executeAction();
+				
+			}
+			/*********************************************TIMER HANDLERS********************************************************
+			 * 1. directory reading completed
+			 * 2. File reading complated
+			 * 3. File has not been modified and publish process jumps out with out taking any actions
+			 * 4. starts timer once filejump and file publish completed, waits for 100 milliseconds
+			 * 5. Waits for 2000 milliseconds once a device has been published and invokes initPub() for printing of the next device
+			 * **/
+			private function directoryReadHandler(event:EventFilePublish):void	{
+				publishQueue.initialiseQueue(initializeManager);
+			}
+			private function fileReadingDoneHandler(event:EventFilePublish):void	{
+				logBox.text = logMessage;
+				fileLogTimer.start();
+			}
+			private function fileReadingJumpHandler(event:EventFilePublish):void	{
+				logBox.text = logMessage;
+				fileLogTimer.start();
+			}
+			private function fileLogTimerHandler(event:TimerEvent):void	{
+				fileLogTimer.stop();
+				publishQueue.restartPublish();
+			}
+			private function activateDevicePrintTimer(event:TimerEvent):void{
+				devicePrintTimer.stop();
+				initPub();
+			}
+			private function onThumbnailHandler(event:TimerEvent):void{
+				thumbnailTimer.stop();
+				thumbHelper.initialise(pathSelected,_device);
+				displayPublishInfo()
+			}
+			
+			/**
+			 * Listens once all the publish process completed on a currrent queued device for printing
+			 * Dispatched by PublishQueue
+			 * 
+			 * */
+			private function queueEventComplted(event:EventFilePublish):void	{
+				fileLogTimer.stop();
+				var relativePresent : ArrayCollection = PublishModel.getInstance().replativePanoPO;
+				trace( "json number : " + PublishModel.getInstance().replativePanoPO.length)
+				if(relativePresent.length > 0)	{
+					var jsonMerge : JsonParsing = new JsonParsing();
+					jsonMerge.init(relativePresent);
+				}else{
+					completeCurrentDevicePublish()
+				}
+			}
+			/*********************************************UP ON PUBLISH COMPLETION OF A QUEUED DEVICE********************************
+			 * Invokes once a queued device printing is finished
+			 * Creates articleinfo.txt from the FileVO, which is an instance variable inside DirectoryVO
+			 * Checks for any devices are present for publishing, if present continues publish with other device
+			 * else closes all publishing task
+			 * And checks whether iPad has been present in the device selected list, if found
+			 * Scales the images and completes the publish task
+			 * */
+			
+			
+			private function completeCurrentDevicePublish():void	{
+				logger.info(".............PUBLISH COMPLETED.............."+ _device[processCount]+"\n");
+				logger.info("<============================================================================>\n");
+				var logInfo : String = "";
+				var cursor : IIterator = _model.directoryList.keyIterator()
+				var fileVO: FileVO;
+				var dvo : DirectoryVO;
+				var hash : String;
+				
+				/**
+				 * Here is a flaw - Usecase scenario
+				 * 1. Published the device, article-info will get created
+				 * 2. User deletes the article-info.txt, with out having any changes of idml/json 
+				 * 3. File will get created, but because of there is no change in the idml, fileVO will not get created, so there wont be any data
+				 * 4. merely the article-info.txt will be created without any info in it.
+				 * WORK AROUND FOR CONTENT AUTHORS
+				 * Delete all json of particular device and article-info.txt then publish it again  
+				 * ***********************************TRYING A WORK AROUND************************************************
+				 * */
+				var afile : File = new File(PublishModel.getInstance().publishVO.publishPath + File.separator +  "articles-info.txt" );
+				if(!afile.exists)	{
+					while(cursor.hasNext())	{
+						hash = cursor.next();
+						dvo = _model.directoryList.itemFor(hash) as DirectoryVO;
+						//safe check
+						try	{
+							fileVO = dvo.fileVO;
+							if(fileVO)	{
+								fileVO.orientation == "p" ? (logInfo += fileVO.getPublishLog()) : null
+							}
+						}
+						catch(error:Error)	{
+							logger.debug("Articleinfo creation   "+error)
+						}
+						
+					}
+					
+					writeArticleInfo(logInfo);
+				}
+				else	{
+					
+				}
+				
+				
+				processCount ++;
+				
+				if (processCount > _device.length-1){
+					preloader.visible = false;
+					logger.info(".............PUBLISH COMPLETED FOR ALL DEVICES..............\n")
+					//closeAllPublishTask();
+					 if(ipad.selected){
+						logger.info("..............IPAD IMAGE CONVERSION STARTED.............")
+						searchImages();
+					}else{
+						closeAllPublishTask()
+					} 
+					
+				}else{
+					devicePrintTimer.start();
+				}				
+			}
+			
+			/**
+			 * Checking artilceinfo file is present
+			 * if its there adding the content inside the file
+			 * and matching it with the artilce publised;
+			 * */
+			
+			private function checkArtilceInfo():void	{
+				var afile : File = new File(PublishModel.getInstance().publishVO.publishPath + File.separator +  "articles-info.txt" );
+				//if(afile.exists)	{
+					artilceinfoHelper.intialiseInfo(afile.url,afile.exists);
+				//}
+			}
+			/*********************************************EVENT LISTENERS AGAINST ACTIVITES********************************************************
+			 * 1. Listener for json merge completion
+			 * 2. searchImages invokes when iPad is present in the publish selected list
+			 * 	  Search jpg and png images of retina size and reduce the size by half
+			 * 3. Listener for Image scale completion
+			 * 4. Closing all publish tasks
+			 * */
+			
+			private function jsonMergeCompleted(event:EventFilePublish):void{
+				completeCurrentDevicePublish()
+			}
+			
+			protected function searchImages():void
+			{
+				preloader.visible = true;
+				
+				var searchDir:DirectorySearch = new DirectorySearch();
+			}
+			
+			private function onScaleCompleted(event:EventFilePublish):void{
+				closeAllPublishTask();
+				EventTransporter.getInstance().removeEventListener(EventFilePublish.EVENT_SCALE_COMPLETED, onScaleCompleted);
+			}
+			
+			private function onJSONUploadComplete(event:EventS3Bucket):void{
+				serviceController.autoDeploy(ivo.pubid, ivo.magid, ivo.editionid, this._deployDevices.toString());
+			}
+			
+			private function closeAllPublishTask():void	{
+				preloader.visible = false;
+				preloader.stopAnim();
+				thumbHelper.initialise(pathSelected,_device);
+				//thumbnailTimer.start();
+				displayPublishInfo();
+			}
+			private function displayPublishInfo():void	{
+				if(_model.corruptedFileList.length)	{
+					var corruptedFiles:String = _model.corruptedFileList.toString().replace(/[ ]*,[ ]*|[ ]+/g, '\n')
+					logger.info(".............CORRUPTED FILES..............");
+					logger.info(corruptedFiles);
+					logger.info(".............CORRUPTED FILES..............");
+				}
+				
+				/**
+				 * if publish triggered from IssuesPanel
+				 * Upload the JSONs to the server
+				 * and do autoDeploy
+				 * **/
+				if(issuePanel.isDeploy)	{
+					uploadOnlyJson();
+				}
+				
+				logger.info("..............ALL PROCESS COMPLETED.............");
+				logger.info("    #####  ##  ## #####  ##     ######  ####  ##  ##               ");
+				logger.info("    ##  ## ##  ## ##  ## ##       ##   ##     ##  ##   ##     ##   ");
+				logger.info("    #####  ##  ## #####  ##       ##    ####  ######  ####   #### ");
+				logger.info("    ##     ##  ## ##  ## ##       ##       ## ##  ##   ##     ##   ");
+				logger.info("    ##      ####  #####  ###### ######  ####  ##  ##  57ca99d  v-1 0.2");				
+			}
+			/*********************************************EVENT HANDLERS********************************************************
+			 * Mouse event handler captured in the UI
+			 * 0. Publish button from the IssuePanel
+			 * 
+			 * 1. Publish button clicked
+			 * 	  pre init setup of publish
+			 * 		a. refreshes the exclude directories
+			 * 		   ( They are the directries which will not publish while on repubish
+			 * 			 It checks the timestamp with the IDML an the JSON file in the folder )
+			 *    Timer added for multiple device printing
+			 * 	  File log timer added for printing files on an interval
+			 * 
+			 * 2. Device selcted while clicking on the checkboxes
+			 *    Invoke helper methods for add android devices on a single click 
+			 *   
+			 * */
+			
+			protected function onPublishIssue(event:EventIssues):void			{
+				
+				ivo = event.data as IssueRawVO;
+				try	{
+					if(ivo)	{
+						var f:File = new File(ivo.local);
+						if(f.exists)	{
+							PublishModel.getInstance().directoryPath = String(ivo.local);
+							PublishModel.getInstance().setPublishVO(folderSelected);
+							issueDir.text = PublishModel.getInstance().directoryPath;
+							PublishModel.getInstance().iPadFolderPath = String(ivo.local);
+							pathSelected = String(ivo.local); 
+							_isconverted = true;
+							tabbar.selectedIndex = 1;
+							Alert.show("Please select the devices to publish", "Publish Issue",4,this);
+						}
+					}
+				}
+				catch(error:Error)	{
+					logger.info("Please select the issue from Issue Panel.");
+				}
+				
+			
+			}
+			
+			protected function publish(event:MouseEvent):void			{
+				publishIssue();
+			}
+			
+			private function publishIssue():void	{
+				preloader.visible = true;
+				preloader.makeAnim();
+				processCount = 0;
+				logMessage ="";
+				logger.info(".............STARTED..............");
+				
+				devicePrintTimer.addEventListener(TimerEvent.TIMER,activateDevicePrintTimer);
+				fileLogTimer.addEventListener(TimerEvent.TIMER,fileLogTimerHandler);
+				thumbnailTimer.addEventListener(TimerEvent.TIMER,onThumbnailHandler);
+				
+				_model.postInitialisePublish();
+				
+				removeEmptySelectedDevices()
+				
+				//CHANGE IT
+				initPub();
+			}
+			
+			protected function deviceSelectedhandler(event:MouseEvent):void
+			{
+				
+				switch(event.target.label)	{
+					case Configuration.SELECT_ALL:
+						uncheckAll(event.target.selected);
+						_devicelist = new LinkedMapFx();
+						_devicelist = (event.target.selected ? getAllDevices() : new LinkedMapFx());
+						break;
+					case Configuration.ANDROID_PHONES:
+						addAndroidDevices(Configuration.ANDROID_PHONES, event.target.selected)
+						break;
+					case Configuration.ANDROID_TABLETS:
+						addAndroidDevices(Configuration.ANDROID_TABLETS, event.target.selected)
+						break;
+					default:
+						if(_devicelist.hasKey(event.target.label)){
+							_devicelist.removeKey(event.target.label);
+							addBothiPad(event.target.label,false);
+						}else{
+							_devicelist.add(event.target.label , event.target.label);
+							addBothiPad(event.target.label,true);
+						}
+						break;
+				}
+				
+				
+				_device = _devicelist.keysToArray();
+				/**
+				 * Sorting array for publishing ipad-retina first
+				 * Check line 60 PublishQueue.as, adding excluded directories for ipad
+				 * */
+				_device.sort(Array.DESCENDING);
+				
+				isPublish();	
+			}
+			/**
+			 * 
+			 * */
+			protected function onTabClickHandler(event:ItemClickEvent):void
+			{
+				// TODO Auto-generated method stub
+				
+			}
+			/**
+			 * Adding both ipad and ipad-retina while publishing it.
+			 * **/
+			private function addBothiPad(device:String,isAdd:Boolean):void	{
+				if(device == Configuration.DEVICE_IPAD || device == Configuration.DEVICE_IPAD_RETINA)	{
+					var key:String = (device == Configuration.DEVICE_IPAD ? Configuration.DEVICE_IPAD_RETINA : Configuration.DEVICE_IPAD);
+					ipad.selected = ipad_rt.selected = isAdd;
+					if(isAdd)	{
+						_devicelist.add(key, key);
+					}
+					else	{
+						_devicelist.removeKey(key)
+						
+					}
+				}
+			}
+			private function removeEmptySelectedDevices():void	{
+				var cursor : IIterator = this._devicelist.keyIterator();
+				var key:String;
+				var deviceInfo:Object;
+				var folder:File
+				while(cursor.hasNext())	{
+					key = cursor.next();
+					deviceInfo = _model.allDeviceInfo.itemFor(key);
+					folder = new File(_model.iPadFolderPath+deviceInfo.folder);
+					if(!folder.isDirectory)	{
+						this._devicelist.removeKey(key);
+					}
+				}
+				_device = _devicelist.keysToArray();
+				_device.sort(Array.DESCENDING);
+				_deployDevices = _model.getDevicesForDeploy(_device);
+				
+			}
+			
+			/*********************************************HELPER METHODS********************************************************
+			 * Helper methods for
+			 *  
+			 * 1.Publish and Upload buttons enable/disable on selecting the check boxes
+			 * 2. Unchecking all selected chcekboxes
+			 * 3. Writing articleinfo.txt file
+			 * 3. Getting and keeping all the device info into a LinkedMap
+			 * 4. Adding android devices (phones and tablets) 
+			 *    Up on a single selection 7 android phones and 5 android tablets will get added into the publishing queue
+			 * 5. Getting the device details from DeviceInfo class provide param as the selected device
+			 * 6. REST Calls initialise
+			 * **/
+			
+			private function isPublish():void	{
+				if( pathSelected != ""  && _isconverted  && 
+					(ipad.selected || ipad_rt.selected || 
+						iph4.selected || iph5.selected || 
+						selectAll.selected || Tab05.selected ||
+						Tab10.selected || andt.selected || andp.selected))	{
+					publishBtn.enabled =  uploadBtn.enabled = true;	
+				}
+				else	{
+					publishBtn.enabled =  uploadBtn.enabled = false;
+				}
+			}
+			
+			
+			
+			private function uncheckAll(isSelect:Boolean):void{
+				ipad.selected = ipad_rt.selected = iph4.selected = 
+					iph5.selected = Tab05.selected = Tab07.selected = 
+					Tab10.selected = andp.selected = andt.selected = isSelect;
+				
+				ipad.mouseEnabled = ipad_rt.mouseEnabled = iph4.mouseEnabled = 
+					iph5.mouseEnabled = Tab05.mouseEnabled = Tab07.mouseEnabled = 
+					Tab10.mouseEnabled = andp.mouseEnabled = andt.mouseEnabled = !isSelect;
+			}
+			private function uncheckComplete(isSelect:Boolean):void{
+				ipad.selected = ipad_rt.selected = iph4.selected = 
+					iph5.selected = Tab05.selected = Tab07.selected = 
+					Tab10.selected = andp.selected = andt.selected = isSelect;
+					selectAll.selected = !isSelect;
+				
+				ipad.mouseEnabled = ipad_rt.mouseEnabled = iph4.mouseEnabled = 
+					iph5.mouseEnabled = Tab05.mouseEnabled = Tab07.mouseEnabled = 
+					Tab10.mouseEnabled = andp.mouseEnabled = andt.mouseEnabled = !isSelect
+					selectAll.selected = isSelect;
+			}
+
+			
+			private function writeArticleInfo(ainfo:String):void	{
+				var afile : File = new File(PublishModel.getInstance().publishVO.publishPath + File.separator +  "articles-info.txt" );
+				var astrem : FileStream = new FileStream();
+				
+				astrem.open(afile,FileMode.WRITE);
+				astrem.writeUTFBytes(ainfo);
+				astrem.close();
+				
+			}
+			
+			private function  getAllDevices():LinkedMapFx{
+				var i:Number = 0;
+				var devicelist :LinkedMapFx = new LinkedMapFx;
+				var phoneAndTablets : Array = Configuration.ANDROID_PHONE_INFO.concat(Configuration.ANDROID_TABLET_INFO);
+				for(i = 1; i < deviceArray.length; i++){
+					devicelist.add(deviceArray.getItemAt(i).label , deviceArray.getItemAt(i).label);
+				}
+				for( i=0; i<phoneAndTablets.length; i++)	{
+					devicelist.add(phoneAndTablets[i].label, phoneAndTablets[i].label);
+				}
+				
+				return devicelist
+			}
+			
+			private function addAndroidDevices(dstr:String, isAdd:Boolean):void	{
+				var i:Number = 0;
+				var item:Object;
+				var darray : Array = (dstr == Configuration.ANDROID_PHONES ? Configuration.ANDROID_PHONE_INFO : Configuration.ANDROID_TABLET_INFO);
+				for(i = 0; i<darray.length; i++)	{
+					item = darray[i];
+					if(isAdd)	{
+						_devicelist.add(item.label , item.label);
+					}
+					else	{
+						if(_devicelist.hasKey(item.label))	{
+							_devicelist.removeKey(item.label);
+						}
+					}
+				}
+			}
+			
+			private function getDeviceDetails(key:String):void{
+				
+				var deviceInfo : Object = _model.allDeviceInfo.itemFor(key);
+				
+				PublishModel.getInstance().pageHeight = deviceInfo.pHeight;
+				PublishModel.getInstance().pageWidth =  deviceInfo.pWidth;
+				PublishModel.getInstance().pageRatio =  deviceInfo.sRatio;
+				PublishModel.getInstance().deviceSelected =  deviceInfo.label;
+				folderSelected =  deviceInfo.folder;
+				PublishModel.getInstance().directoryPath = pathSelected +folderSelected;
+				PublishModel.getInstance().setPublishVO(folderSelected);
+			}
+			
+			private function initialiseREST():void	{
+				serviceController = new RESTServiceController();
+				serviceController.addEventListener(EventRestService.EVENT_REST_RESPONSE, onData);
+				issuePanel.intialiseUI(serviceController);
+				
+				
+			}
+			private function onData(event:EventRestService):void	{
+				if(event.data.status == "success")	{
+					switch(event.action)	{
+						case Constants.LOGIN:
+							
+							CookieHelper.getInstance().addUserInfo(event.data.userinfo);
+							loginView.visible = false;
+							tabContentHolder.visible = true;
+							loginContainer.resetFields();
+							issuePanel.showMagazines();
+							
+						break;
+						case Constants.AUTOPUBLISH:
+							logger.info(".............."+JSON.encode(event.data)+".............");
+							logger.info("..............Publish complted on the server side.............");
+							
+						break
+						
+						case Constants.AUTODEPLOY :
+							logger.info(".............. Devices deployed - Please do check in your testing app to see the issue.............");
+						break;
+					}
+				}
+			}
+			/**********************************************BROWSING FILES*******************************************************
+			 * 
+			 * Browse files for publishing
+			 * Setting the directory path, and the creating the publishVO
+			 * and the browsed files will be uploaded to S3 buckets
+			 * 
+			 * **/
+			protected function browse(event:MouseEvent):void
+			{
+				var jInterface:HostObject = HostObject.getRoot(HostObject.extensions[0]); 
+				var path : String = "";
+				try{
+					path=jInterface.eval( new myScriptClass().toString());
+					PublishModel.getInstance().directoryPath = String(path);
+					PublishModel.getInstance().setPublishVO(folderSelected);
+					issueDir.text = PublishModel.getInstance().directoryPath;
+					PublishModel.getInstance().iPadFolderPath = String(path);
+					pathSelected = String(path); 
+					_isconverted = true;
+					uncheckComplete(false)
+					isPublish();
+				}catch(e:Error){
+					path ='';
+				}
+			}
+			
+			
+			/****************************************LOG UTILS*************************************************************
+			 * 
+			 * Logger and logging info on the UI
+			 * 
+			 * */
+			private function setupLogger():void {
+				Log.loggerFactory = new EventfulLoggerFactory();
+				logger = Log.getLogger(Configuration.PICSAEN_LOG);
+				EventfulLogger.root().addEventListener(LoggerEvent.LOGGER_EVENT, logMessageHandler);
+				
+				PublishModel.getInstance().pageHeight = deviceArray.getItemAt(2)['pHeight'];
+				PublishModel.getInstance().pageWidth = deviceArray.getItemAt(2)['pWidth'];
+				PublishModel.getInstance().pageRatio = deviceArray.getItemAt(2)['sRatio'];
+				
+				issuePanel.addEventListener(EventIssues.EVENT_LOGOUT,logout);
+				issuePanel.addEventListener(EventIssues.EVENT_S3_PUSH,uploadS3Start);
+				issuePanel.addEventListener(EventIssues.EVENT_PUBLISH_ISSUE,onPublishIssue);
+				
+				
+				
+			}
+			private function logMessageHandler(event:LoggerEvent):void	{
+				logMessage += event.message+"\n";
+				logBox.verticalScrollPosition = logBox.maxVerticalScrollPosition  ;
+			}
+			protected function removeLog(event:MouseEvent):void	{
+				logMessage ="";
+				logBox.text = "";
+				
+			}
+			
+			
+			/*******************************************S3 UPLOADS AND STUFF **********************************************************
+			 * 
+			 * Dropping images on S3 bucket related method are follows
+			 * 
+			 * **/
+			private function uploadBucket(event:MouseEvent):void	{
+				s3Manager.initialise(_device);
+			}
+			private function uploadOnlyJson():void	{
+				s3Manager.isOnlyJson = true;
+				s3Manager.initialise(ivo.devices);
+			}
+			private function uploadS3Start(event:EventIssues):void	{
+				var deviceInfo : Object;
+				var issueVO:IssueRawVO = event.data as IssueRawVO;
+				s3Manager.initialise(issueVO.devices);
+			}
+			private function logout(event:EventIssues):void	{
+				this.tabContentHolder.visible = false;
+				this.loginView.visible = true;
+			}
+			
+
+			
+		]]>
+	</mx:Script>
+	<view:DrawCanvas height="100%" width="100%"/>
+	
+	<mx:VBox height="100%" width="100%" verticalAlign="top" id="loginView"  visible="true">
+		<view:LoginView rest="{this.serviceController}" id="loginContainer"/>
+	</mx:VBox>
+	
+	
+	<mx:VBox height="100%" width="100%" verticalAlign="top" verticalGap="0" styleName="tabContainer" id="tabContentHolder" visible="false">
+		<!--TAB BAR-->
+		<mx:TabBar dataProvider="{tabNames}" selectedIndex="0" itemClick="onTabClickHandler(event)" id="tabbar"/>
+		<mx:Canvas  height="100%" width="100%" >		
+		<!--ISSUE CONATINER-->
+		<mx:VBox height="1000%" width="100%" id="issueContainer">
+			<issues:IssueViewPanel visible="{tabbar.selectedIndex == 0}" id="issuePanel"/>
+		</mx:VBox>
+		<!--PUBLISH CONTAINER-->	
+		<mx:VBox height="1000%" width="100%" verticalAlign="top" styleName="publishContainer" verticalGap="10" id="publishContainer" visible="{tabbar.selectedIndex == 1}">
+		<mx:HBox width="100%">
+			<mx:Label id="title" width="100%" textAlign="center"/>	
+		</mx:HBox>
+		
+		<mx:HBox width="100%" horizontalAlign="left">
+			<mx:Label text="Device: " width="25%" maxWidth="100" />
+			<mx:HBox width="75%">
+				<mx:VBox width="100%" verticalGap="0">
+					<mx:HBox width="100%" verticalGap="0">
+						<mx:CheckBox width="20%" id="ipad" label="{Configuration.DEVICE_IPAD}" click="deviceSelectedhandler(event)" toolTip="hello there"/>
+						<mx:CheckBox width="20%" id="ipad_rt" label="{Configuration.DEVICE_IPAD_RETINA}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="iph4" label="{Configuration.DEVICE_IPHONE_4}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="iph5" label="{Configuration.DEVICE_IPHONE_5}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="Tab10" label="{Configuration.DEVICE_ANDRIOD_10}" click="deviceSelectedhandler(event)"/>
+					</mx:HBox>
+					<mx:HBox width="100%" verticalGap="0">
+						<mx:CheckBox width="20%" id="Tab07" label="{Configuration.DEVICE_ANDRIOD_07}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="Tab05" label="{Configuration.DEVICE_ANDRIOD_05}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="andp" label="{Configuration.ANDROID_PHONES}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="andt" label="{Configuration.ANDROID_TABLETS}" click="deviceSelectedhandler(event)"/>
+						<mx:CheckBox width="20%" id="selectAll" label="{Configuration.SELECT_ALL}" click="deviceSelectedhandler(event)"/>
+					</mx:HBox>
+				</mx:VBox>
+			</mx:HBox>
+		</mx:HBox>
+		<mx:HBox width="100%">
+			<mx:Label text="Issue Dir: " width="25%" maxWidth="100"/>
+			<mx:TextInput id="issueDir" text="eg./Dropbox/Library_Name/1_Publisher/1_YourMagazine/1_Issue" width="50%" maxWidth="200" height="26" toolTip="{issueDir.text}"/>	
+			<mx:Button label="Browse" click="browse(event)" width="25%" maxWidth="100" styleName="commonBtn"/>
+		</mx:HBox>
+		<mx:HBox>
+			<mx:Button label="Publish" click="publish(event)" id="publishBtn" styleName="commonBtn"/>
+			<mx:Button label="Upload to S3 Bucket"  id="uploadBtn" styleName="commonBtn" click="uploadBucket(event)"/>
+			
+			<mx:HBox paddingLeft="30" paddingTop="15">
+				<preloader:LoadAnim  id="preloader">
+				</preloader:LoadAnim>
+			</mx:HBox>
+			
+		</mx:HBox>
+		
+		<mx:TextArea width="100%" height="300" id="logBox" paddingLeft="10" paddingRight="10" text="{logMessage}" styleName="logInfo" />
+		<mx:Button label="Remove Log" click="removeLog(event)" styleName="commonBtn"/>
+		
+	</mx:VBox>
+	
+	</mx:Canvas>
+	</mx:VBox>
+	
+</mx:Application>

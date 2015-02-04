@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Canvas xmlns:mx="http://www.adobe.com/2006/mxml" width="100%" height="100%" backgroundColor="#35353f">
+	<mx:Script>
+		<![CDATA[
+			import com.picsean.publish.core.RESTServiceController;
+			import com.picsean.publish.utils.Configuration;
+			
+			public var rest:RESTServiceController;
+			
+			public function resetFields():void	{
+				this.username.text = this.password.text = "";
+			}
+		]]>
+	</mx:Script>
+	<mx:HBox id="loginCanvas" width="100%" height="100%" verticalAlign="middle" horizontalAlign="center">
+		<mx:HBox width="700" height="250" styleName="loginContainer">
+			<mx:HBox width="60%" styleName="splashScreen" height="100%">
+				<mx:Image source="{Configuration.SPLASH_LOGO}"/>
+			</mx:HBox>
+			<mx:VBox width="40%"  height="100%" styleName="loginHolder">
+				<mx:VBox width="100%" styleName="loginForm">
+					<mx:TextInput id="username"/>
+					<mx:TextInput id="password" displayAsPassword="true"/>
+					<mx:CheckBox id="checkBox" label="Remember me" styleName="remeberMe" click="rest.getMagazines('5')"/>
+					<mx:Button label="Login"  styleName="loginButton" click="rest.doLogin(this.username.text,this.password.text)" />
+					<mx:Label id="loginMessage" styleName="loginMsg"/>
+				</mx:VBox>
+			</mx:VBox>
+		</mx:HBox>
+	</mx:HBox>
+</mx:Canvas>

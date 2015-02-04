@@ -1,0 +1,46 @@
+<mx:TitleWindow xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" width="400" height="150" title="Select Working directory" creationComplete="creationCompleteHandler(event)">
+	<mx:Script>
+		<![CDATA[
+			import com.picsean.publish.events.EventIssues;
+			import com.picsean.publish.utils.CookieHelper;
+			
+			import flash.filesystem.File;
+			
+			import mx.events.FlexEvent;
+			import mx.managers.PopUpManager;
+			
+			[Embed (source= "Resources/Browse.jsx" , mimeType= "application/octet-stream" )] 
+			private static var myScriptClass:Class;
+			
+			protected function doSelectFolder(event:MouseEvent):void
+			{
+				var jInterface:HostObject = HostObject.getRoot(HostObject.extensions[0]); 
+				var path : String = "";
+				try{
+					path = jInterface.eval( new myScriptClass().toString());
+					folderPath.text = path+File.separator;
+					CookieHelper.getInstance().setWorkspace( path+File.separator );
+					this.dispatchEvent(new EventIssues(EventIssues.EVENT_SET_WORKSPACE,path+File.separator));
+				}catch(e:Error){
+					path ='';
+				}
+				
+			}
+			
+			protected function creationCompleteHandler(event:FlexEvent):void
+			{
+				if(CookieHelper.getInstance().getWorkspace() != "")	{
+					folderPath.text = CookieHelper.getInstance().getWorkspace();
+				}
+			}
+			
+		]]>
+	</mx:Script>
+	<mx:VBox verticalGap="10" width="100%" height="100%" paddingBottom="10" paddingLeft="10" paddingRight="10" paddingTop="10" horizontalAlign="center" backgroundColor="#666666">
+		<mx:TextInput  width="100%" id="folderPath"/>
+		<mx:HBox width="100%" height="100%" horizontalGap="15" horizontalAlign="right">
+			<mx:Button styleName="loginButton" label="Browse" click="doSelectFolder(event)" id="browseBtn"/>
+			<mx:Button styleName="commonBtn" label="Close" click="PopUpManager.removePopUp(this)"/>
+		</mx:HBox>
+	</mx:VBox>
+</mx:TitleWindow>

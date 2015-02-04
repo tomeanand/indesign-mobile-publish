@@ -23,6 +23,9 @@ Dillinger uses a number of open source projects to work properly:
 
 * [Dan Schultz] - as3-collections
 * [As3Crypto]  -  ActionScript 3 Cryptography Library
+* [AS3 Commons]  -  ActionScript Collections Framework
+* [HTTP Client]  -  HTTP/HTTPS client library for Actionscript 3.
+
 
 ### Publishing
 
@@ -46,8 +49,8 @@ MIT
 [Flex]:https://creative.adobe.com/products/flash-builder
 [Extension Manager]:https://creative.adobe.com/products/extension-manager
 [As3Crypto]:http://crypto.hurlant.com/
-[Twitter Bootstrap]:http://twitter.github.com/bootstrap/
-[keymaster.js]:https://github.com/madrobby/keymaster
+[AS3 Commons]:https://github.com/AS3Commons/as3commons-collections
+[HTTP Client]:https://github.com/gabriel/as3httpclient
 [jQuery]:http://jquery.com
 [@tjholowaychuk]:http://twitter.com/tjholowaychuk
 [express]:http://expressjs.com

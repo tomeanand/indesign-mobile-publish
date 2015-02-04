@@ -1,0 +1,223 @@
+/* CSS file */
+
+@font-face {
+	src: url(../assets/skins/Roboto-Regular.ttf);
+	fontFamily: "DinProRegular"; 
+} 
+@font-face {
+	src: url(../assets/skins/Roboto-Bold.ttf);
+	fontFamily: "DinProBold";
+	fontWeight: bold;
+} 
+global 
+{
+	fontFamily:DinProRegular;
+	color: #FFF;
+	font-size:12;
+	modal-transparency: 0.2;
+	modal-transparency-blur: 2;
+	modal-transparency-color: #4D4D4D;
+}
+
+/*Application{backgroundImage: Embed(source="../assets/skins/Skins.swf",symbol="BackgroundImageApp");
+	background-repeat:   repeat;
+	background-position: center;
+	background-blend:    multiply;}*/
+Label{color:#FFF;font-family: DinProRegular;}
+RadioButton{color:#FFF;font-family: DinProRegular;}
+Text{color:#FFF;font-family: DinProRegular;}
+.wrapper{verticalGap:0; horizontalGap:3}
+.commonLabel{color:#FFF;font-family: DinProRegular;}
+.logInfo{fontSize:10;font-size:10;}
+.commonBtn {
+	fontFamily: DinProBold;
+	fontWeight: bold;
+	upSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_upSkin");
+	downSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_downSkin");
+	overSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_overSkin");
+	disabledSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_disabledSkin");
+	color:#989898;
+	textRollOverColor: #FFF;
+	textSelectedColor:#FFF; 
+	font-size:13;
+}
+.loginForm{paddingLeft:20;}
+.remeberMe{fontSize:10;}
+.forgot{fontSize:10; textDecoration:underline;}
+.loginMsg{fontSize:10;color:#FFF;}
+.loginButton{upSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_downSkin");}
+.toolPaneStyle{backgroundColor:#252525;}
+
+
+Button {
+	fontFamily: DinProBold;
+	fontWeight: bold;
+	upSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_upSkin");
+	downSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_downSkin");
+	overSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_overSkin");
+	disabledSkin: Embed(source="../assets/skins/Skins.swf",symbol="Button_disabledSkin");
+	color:#989898;
+	textRollOverColor: #FFF;
+	textSelectedColor:#FFF; 
+	font-size:13;
+}
+
+
+ComboBox{
+	upSkin: Embed(source="../assets/skins/Skins.swf",symbol="ComboBoxArrow_upSkin"); 
+	downSkin :Embed(source="../assets/skins/Skins.swf",symbol="ComboBoxArrow_downSkin"); 
+	overSkin : Embed(source="../assets/skins/Skins.swf",symbol="ComboBoxArrow_overSkin"); 
+	disabledSkin : Embed(source="../assets/skins/Skins.swf",symbol="ComboBoxArrow_disabledSkin"); 
+	dropdownStyleName: "myComboBoxDropDowns";
+	color:#FFF;
+	textFieldStyleName:"textfontStyleCommon";
+	font-family: DinProBold;
+}
+.textfontStyleCommon{font-family: DinProBold;}
+.myComboBoxDropDowns {
+	borderColor: #989898;
+	font-family: DinProBold;
+	color: #000;
+	backgroundColor:#989898;
+	dropShadowEnabled: false;
+}
+ScrollBar
+{
+	downArrowDisabledSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowDown_disabledSkin");
+	downArrowDownSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowDown_downSkin");
+	downArrowOverSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowDown_overSkin");
+	downArrowUpSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowDown_upSkin");
+	thumbDownSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollThumb_downSkin");
+	thumbIcon: Embed(source="../assets/skins/Skins.swf", symbol="ScrollBar_thumbIcon");
+	thumbOverSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollThumb_overSkin");
+	thumbUpSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollThumb_upSkin");
+	trackSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollTrack_Skin");
+	upArrowDisabledSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowUp_disabledSkin");
+	upArrowDownSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowUp_downSkin");
+	upArrowOverSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowUp_overSkin");
+	upArrowUpSkin: Embed(source="../assets/skins/Skins.swf", symbol="ScrollArrowUp_upSkin");
+}
+
+TextInput {borderStyle: none;backgroundColor: #CCCCCC;color:#4D4D4D}
+List {
+	backgroundColor: #666666;
+	alternatingItemColors: #CCCCCC, #989898;
+	textIndent: 2;
+	font-family: DinProRegular;
+}
+.commonListStyle {
+	backgroundColor: #666666;
+	alternatingItemColors: #CCCCCC, #989898;
+	textIndent: 2;
+	font-family: DinProRegular;
+}
+TextInput {
+	borderStyle: solid;
+	borderColor: #b7babc;
+	borderThickness: 0;
+	color: #000000;
+	font-family: DinProRegular;
+}
+.commonInput {
+	borderStyle: solid;
+	borderColor: #b7babc;
+	borderThickness: 0;
+	color: #000000;
+	font-family: DinProRegular;
+	fontStyle:normal;
+}
+ToolTip{borderSkin: Embed(source="../assets/skins/Skins.swf", symbol="ToolTip_borderSkin");cornerRadius:0}
+Tree{color:#989898; backgroundColor: #1B1B1B;}
+
+TabBar
+{
+	firstButtonStyleName: "tabStyle";
+	tabStyleName: "tabStyle";
+	lastButtonStyleName: "tabStyle";
+}
+
+.tabStyle {
+	disabledSkin: Embed(source="../assets/skins/Skins.swf", symbol="Tab_disabledSkin");
+	downSkin: Embed(source="../assets/skins/Skins.swf", symbol="Tab_downSkin");
+	overSkin: Embed(source="../assets/skins/Skins.swf", symbol="Tab_overSkin");
+	selectedDisabledSkin: Embed(source="../assets/skins/Skins.swf", symbol="TabSelected_disabledSkin");
+	selectedDownSkin: Embed(source="../assets/skins/Skins.swf", symbol="TabSelected_upSkin");
+	selectedOverSkin: Embed(source="../assets/skins/Skins.swf", symbol="TabSelected_upSkin");
+	selectedUpSkin: Embed(source="../assets/skins/Skins.swf", symbol="TabSelected_upSkin");
+	upSkin: Embed(source="../assets/skins/Skins.swf", symbol="Tab_upSkin");
+	color:#CCCCCC;
+	textRollOverColor: #FFF;
+	textSelectedColor:#FFF; 
+}
+
+
+VRule {strokeColor: #333333;shadowColor: #666666;}
+HRule {strokeColor: #333333;shadowColor: #666666;}
+
+
+HSlider {
+	labelOffset: -1;
+	thumbOffset: 0;
+	dataTipOffset: -8;
+	tickOffset: 0;
+	tickLength: 3;
+	tickThickness: 1;
+	tickColor: #000000;
+	showTrackHighlight: true;
+	invertThumbDirection: false;
+	borderColor: #000000;
+	trackColors: #000000, #000000;
+	themeColor: #ff3333;
+	fillColors: #cc0000, #cc0000, #cc0000, #cc0000;
+}
+/*HorizontalList
+{
+	backgroundColor: #666666;
+	alternatingItemColors: #CCCCCC, #989898;
+	textIndent: 2;
+	font-family: DinProRegular;
+}*/
+
+TileList{
+	backgroundColor: #666666;
+	alternatingItemColors: #CCCCCC, #989898;
+	textIndent: 2;
+	font-family: DinProRegular;
+}
+
+/**/
+/**/
+.mappingCanvsStyle{backgroundColor:#252525;}
+.publishContainer{
+	paddingBottom : 10;
+	paddingLeft:10;
+	paddingRight:10;
+	paddingTop:10;
+	backgroundColor:#7F7F7F;
+	verticalGap:0;
+	horizontalGap:0;
+}
+.tabContainer{backgroundColor:#666666;}
+CheckBox
+{
+	disabledIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_disabledIcon");
+	downIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_downIcon");
+	overIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_overIcon");
+	selectedDisabledIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_selectedDisabledIcon");
+	selectedDownIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_selectedDownIcon");
+	selectedOverIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_selectedOverIcon");
+	selectedUpIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_selectedUpIcon");
+	upIcon: Embed(source="../assets/skins/Skins.swf", symbol="CheckBox_upIcon");
+	font-family: DinProRegular;
+	color:#ffffff;
+	textRollOverColor:#FFF;
+	textSelectedColor:#FFF; 
+}
+Alert{
+	backgroundColor: #CCCCCC;
+	background-color:#494340;
+	border-color:#000000;
+	buttonStyleName: "commonBtn";
+}
+
+

@@ -1,0 +1,1 @@
+﻿function browse(){    var folder = Folder.selectDialog("Select a folder of documents to process");    return (folder.fsName)?folder.fsName:"";}browse();
